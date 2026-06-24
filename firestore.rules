@@ -1,0 +1,170 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId}
+// Fields:
+//   - id: number (required)
+//   - username: string (required)
+//   - full_name: string (optional)
+//   - avatar: string (optional)
+//   - email: string (optional)
+//   - role: string (required, ['gerencia', 'admin', 'user'])
+//   - created_at: string (optional)
+//
+// Collection: sensors
+// Document ID: {sensorId}
+// Fields:
+//   - id: number (required)
+//   - identifier: string (required)
+//   - name: string (required)
+//   - status: string (required, ['active', 'offline', 'maintenance'])
+//   - last_seen: string (optional)
+//   - token: string (optional)
+//   - latitude: number (optional)
+//   - longitude: number (optional)
+//   - floor_x: number (optional)
+//   - floor_y: number (optional)
+//
+// Collection: sensors/{sensorId}/readings
+// Document ID: {readingId}
+// Fields:
+//   - id: number (required)
+//   - sensor_id: number (required)
+//   - temperature: number (required)
+//   - humidity: number (required)
+//   - created_at: string (required)
+//
+// Collection: accessKeys
+// Document ID: {keyId}
+// Fields:
+//   - id: number (required)
+//   - key: string (required)
+//   - role: string (required, ['gerencia', 'admin', 'user'])
+//   - is_used: boolean (required)
+//   - created_at: string (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gerencia')) ||
+          (request.auth.token.email == "dudubighetti2005@gmail.com")
+        );
+    }
+
+    function isGerencia() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gerencia') ||
+          (request.auth.token.email == "dudubighetti2005@gmail.com")
+        );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['username', 'role']) &&
+             data.username is string && data.username.size() > 0 && data.username.size() < 50 &&
+             data.role in ['gerencia', 'admin', 'user'] &&
+             (!('email' in data) || isValidEmail(data.email)) &&
+             (!('full_name' in data) || (data.full_name is string && data.full_name.size() < 100));
+    }
+
+    function isValidSensor(data) {
+      return data.keys().hasAll(['identifier', 'name', 'status']) &&
+             data.identifier is string && data.identifier.size() > 0 &&
+             data.name is string && data.name.size() > 0 &&
+             data.status in ['active', 'offline', 'maintenance'];
+    }
+
+    function isValidReading(data) {
+      return data.keys().hasAll(['sensor_id', 'temperature', 'humidity', 'created_at']) &&
+             data.sensor_id is number &&
+             data.temperature is number &&
+             data.humidity is number &&
+             data.created_at is string;
+    }
+
+    function isValidAccessKey(data) {
+      return data.keys().hasAll(['key', 'role', 'is_used', 'created_at']) &&
+             data.key is string &&
+             data.role in ['gerencia', 'admin', 'user'] &&
+             data.is_used is bool &&
+             data.created_at is string;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin() || 
+                    (request.auth == null && request.query.limit <= 1); // Permite busca por username no login
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    (isOwner(userId) && (request.resource.data.role == 'user' || request.auth.token.email == "dudubighetti2005@gmail.com") || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    (isOwner(userId) && request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    // Sensors Collection
+    match /sensors/{sensorId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidSensor(request.resource.data);
+      allow delete: if isGerencia();
+
+      // Readings Subcollection
+      match /readings/{readingId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidReading(request.resource.data);
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Access Keys Collection
+    match /accessKeys/{keyId} {
+      allow read: if true; // Permite leitura para validação durante login/registro
+      allow create, update, delete: if isGerencia() && isValidAccessKey(request.resource.data);
+    }
+
+    // Top-level Readings Collection (used by the app for global queries)
+    match /readings/{readingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidReading(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+    // Feedback Collection
+    match /feedback/{feedbackId} {
+      allow create: if isAuthenticated() && 
+                    request.resource.data.keys().hasAll(['email', 'message', 'created_at']) &&
+                    request.resource.data.email is string &&
+                    request.resource.data.message is string;
+      allow read: if isGerencia();
+    }
+  }
+}

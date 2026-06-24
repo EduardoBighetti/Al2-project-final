@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "username": { "type": "string" },
+        "full_name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["gerencia", "admin", "user"] },
+        "created_at": { "type": "string" }
+      },
+      "required": ["username", "role"]
+    },
+    "Sensor": {
+      "title": "Sensor",
+      "description": "IoT Sensor device information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "identifier": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "offline", "maintenance"] },
+        "last_seen": { "type": "string" },
+        "token": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "floor_x": { "type": "number" },
+        "floor_y": { "type": "number" },
+        "temp_limit": { "type": "number" },
+        "owner_uid": { "type": "string" }
+      },
+      "required": ["identifier", "name", "status"]
+    },
+    "Reading": {
+      "title": "Reading",
+      "description": "Sensor reading data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "sensor_id": { "type": "number" },
+        "temperature": { "type": "number" },
+        "humidity": { "type": "number" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["sensor_id", "temperature", "humidity", "created_at"]
+    },
+    "AccessKey": {
+      "title": "AccessKey",
+      "description": "Access key for registration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "key": { "type": "string" },
+        "role": { "type": "string", "enum": ["gerencia", "admin", "user"] },
+        "is_used": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["key", "role", "is_used", "created_at"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles"
+    },
+    "/sensors/{sensorId}": {
+      "schema": "Sensor",
+      "description": "Collection of IoT sensors"
+    },
+    "/sensors/{sensorId}/readings/{readingId}": {
+      "schema": "Reading",
+      "description": "Subcollection of sensor readings"
+    },
+    "/accessKeys/{keyId}": {
+      "schema": "AccessKey",
+      "description": "Collection of access keys"
+    }
+  }
+}

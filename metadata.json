@@ -1,0 +1,8 @@
+{
+  "name": "AL2 IoT Dashboard",
+  "description": "A comprehensive IoT dashboard for monitoring Arduino sensor data, managing devices, and receiving real-time SMS alerts for temperature thresholds.",
+  "requestFramePermissions": [
+    "geolocation",
+    "serial"
+  ]
+}
