@@ -68,7 +68,8 @@ service cloud.firestore {
         (
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gerencia')) ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gerencia' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gerente')) ||
           (request.auth.token.email == "dudubighetti2005@gmail.com")
         );
     }
@@ -77,7 +78,8 @@ service cloud.firestore {
       return isAuthenticated() &&
         (
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gerencia') ||
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gerencia' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gerente')) ||
           (request.auth.token.email == "dudubighetti2005@gmail.com")
         );
     }
@@ -89,7 +91,7 @@ service cloud.firestore {
     function isValidUser(data) {
       return data.keys().hasAll(['username', 'role']) &&
              data.username is string && data.username.size() > 0 && data.username.size() < 50 &&
-             data.role in ['gerencia', 'admin', 'user'] &&
+             data.role in ['gerencia', 'admin', 'user', 'gerente'] &&
              (!('email' in data) || isValidEmail(data.email)) &&
              (!('full_name' in data) || (data.full_name is string && data.full_name.size() < 100));
     }
@@ -112,7 +114,7 @@ service cloud.firestore {
     function isValidAccessKey(data) {
       return data.keys().hasAll(['key', 'role', 'is_used', 'created_at']) &&
              data.key is string &&
-             data.role in ['gerencia', 'admin', 'user'] &&
+             data.role in ['gerencia', 'admin', 'user', 'gerente'] &&
              data.is_used is bool &&
              data.created_at is string;
     }
@@ -165,6 +167,12 @@ service cloud.firestore {
                     request.resource.data.email is string &&
                     request.resource.data.message is string;
       allow read: if isGerencia();
+    }
+
+    // System Logs Collection
+    match /system_logs/{logId} {
+      allow create: if isAuthenticated();
+      allow read: if isAuthenticated();
     }
   }
 }

@@ -6,14 +6,15 @@ export interface User {
   avatar?: string;
   email?: string;
   phone?: string;
-  role: 'gerencia' | 'admin' | 'user';
+  role: 'gerencia' | 'admin' | 'user' | 'gerente';
+  is_blocked?: boolean;
   created_at?: string;
 }
 
 export interface AccessKey {
   id: number;
   key: string;
-  role: 'gerencia' | 'admin' | 'user';
+  role: 'gerencia' | 'admin' | 'user' | 'gerente';
   is_used: boolean;
   created_at: string;
 }
@@ -30,15 +31,19 @@ export interface Sensor {
   address?: string;
   floor_x?: number; // Posição X em % na planta baixa
   floor_y?: number; // Posição Y em % na planta baixa
-  temp_limit?: number;
+  temp_limit?: number; // legacy limit
+  has_alerts?: boolean;
+  alert_limits?: Record<string, number>; // e.g. { "temperatura": 35, "tensao_eletrica": 220 }
+  monitored_magnitudes?: string[]; // array of keys like ["temperatura", "umidade_relativa"]
   owner_uid?: string;
 }
 
 export interface Reading {
   id: number;
   sensor_id: number;
-  temperature: number;
-  humidity: number;
+  temperature?: number;
+  humidity?: number;
+  values?: Record<string, number>;
   created_at: string;
 }
 
@@ -51,3 +56,4 @@ export interface AuthState {
 export interface ApiError {
   message: string;
 }
+

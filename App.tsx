@@ -8,11 +8,14 @@ import { Devices } from './pages/Devices';
 import { Monitoring } from './pages/Monitoring';
 import { ArduinoIDE } from './pages/ArduinoIDE';
 import { Settings } from './pages/Settings';
+import { Tutorial } from './pages/Tutorial';
 import { UserManagement } from './pages/UserManagement';
 import { authService, testModeService, quotaService } from './services/api';
 import { User } from './types';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { SerialProvider } from './contexts/SerialContext';
+import { TourProvider } from './contexts/TourContext';
+import { GlobalTour } from './components/GlobalTour';
 import { FlaskConical } from 'lucide-react';
 import { QuotaWarning } from './components/QuotaWarning';
 import { AlertMonitor } from './components/AlertMonitor';
@@ -70,7 +73,7 @@ function AppContent() {
               username: 'Offline User',
               full_name: 'Usuário (Modo Local)',
               email: 'quota-exceeded@al2.com',
-              role: 'user',
+              role: 'gerencia',
               created_at: new Date().toISOString()
             } as any);
           } else {
@@ -105,6 +108,7 @@ function AppContent() {
     <Router>
       <QuotaWarning />
       <AlertMonitor />
+      <GlobalTour />
       {isTestMode && (
         <div className="bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest py-1 px-4 flex items-center justify-center gap-2 z-[100] sticky top-0">
           <FlaskConical size={12} />
@@ -118,9 +122,10 @@ function AppContent() {
         <Route path="/monitoring" element={user ? <Layout user={user} onLogout={handleLogout}><Monitoring /></Layout> : <Navigate to="/login" />} />
         <Route path="/devices" element={user ? <Layout user={user} onLogout={handleLogout}><Devices /></Layout> : <Navigate to="/login" />} />
         <Route path="/arduino" element={user ? <Layout user={user} onLogout={handleLogout}><ArduinoIDE /></Layout> : <Navigate to="/login" />} />
+        <Route path="/tutorial" element={user ? <Layout user={user} onLogout={handleLogout}><Tutorial /></Layout> : <Navigate to="/login" />} />
         
         {/* Protected route for Gerencia */}
-        <Route path="/users" element={user && user.role === 'gerencia' ? <Layout user={user} onLogout={handleLogout}><UserManagement /></Layout> : <Navigate to="/" />} />
+        <Route path="/users" element={user && (user.role === 'gerencia' || user.role === 'gerente' || user.role === 'admin') ? <Layout user={user} onLogout={handleLogout}><UserManagement /></Layout> : <Navigate to="/" />} />
 
         <Route path="/settings" element={user ? <Layout user={user} onLogout={handleLogout}><Settings user={user} onUpdateUser={handleUpdateUser} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme}/></Layout> : <Navigate to="/login" />} />
         
@@ -134,7 +139,9 @@ export default function App() {
   return (
     <LanguageProvider>
       <SerialProvider>
-        <AppContent />
+        <TourProvider>
+          <AppContent />
+        </TourProvider>
       </SerialProvider>
     </LanguageProvider>
   );
