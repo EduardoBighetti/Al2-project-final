@@ -107,7 +107,7 @@ function AppContent() {
   return (
     <Router>
       <QuotaWarning />
-      <AlertMonitor />
+      {user && <AlertMonitor />}
       <GlobalTour />
       {isTestMode && (
         <div className="bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest py-1 px-4 flex items-center justify-center gap-2 z-[100] sticky top-0">

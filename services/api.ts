@@ -249,7 +249,7 @@ export const authService = {
       });
     });
   },
-  login: async (username: string, password: string, accessKey?: string): Promise<{ user: User }> => {
+  login: async (username: string, password: string, accessKey?: string, rememberMe: boolean = true): Promise<{ user: User }> => {
     const cleanUsername = username.trim();
     
     if (testModeService.isActive()) {
@@ -258,6 +258,10 @@ export const authService = {
     }
     
     try {
+      // Set persistence BEFORE logging in
+      const { setPersistence, browserLocalPersistence, browserSessionPersistence } = await import('firebase/auth');
+      await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      
       let email = cleanUsername;
       let userData: User | null = null;
       
@@ -322,6 +326,19 @@ export const authService = {
       }
       throw new Error(error.message || 'Falha no login');
     }
+  },
+  resetPasswordRequest: async (email: string): Promise<void> => {
+    const { sendPasswordResetEmail } = await import('firebase/auth');
+    auth.languageCode = 'pt';
+    await sendPasswordResetEmail(auth, email);
+  },
+  verifyResetCode: async (code: string): Promise<string> => {
+    const { verifyPasswordResetCode } = await import('firebase/auth');
+    return await verifyPasswordResetCode(auth, code);
+  },
+  confirmResetPassword: async (code: string, newPassword: string): Promise<void> => {
+    const { confirmPasswordReset } = await import('firebase/auth');
+    await confirmPasswordReset(auth, code, newPassword);
   },
   logout: async (): Promise<void> => {
     await signOut(auth);
@@ -526,6 +543,10 @@ export const sensorService = {
       callback(MOCK_SENSORS);
       return () => {};
     }
+    if (quotaService.isExceeded()) {
+      callback(quotaService.loadSensorsFromBackup());
+      return () => {};
+    }
     return onSnapshot(collection(db, 'sensors'), (snapshot) => {
       const sensors = snapshot.docs.map(doc => doc.data() as Sensor);
       quotaService.saveSensorsToBackup(sensors);
@@ -607,6 +628,10 @@ export const readingService = {
       }
       return mockReadings.slice(0, 50);
     }
+    if (quotaService.isExceeded()) {
+      const backup = quotaService.loadFromBackup();
+      return sensorId ? backup.filter((r: Reading) => r.sensor_id === sensorId).slice(0, 20) : backup.slice(0, 50);
+    }
     try {
       let q;
       if (sensorId) {
@@ -631,6 +656,9 @@ export const readingService = {
   getHistorical: async (startDate: string, endDate: string): Promise<Reading[]> => {
     if (testModeService.isActive()) {
       return mockReadings.filter(r => r.created_at >= startDate && r.created_at <= endDate);
+    }
+    if (quotaService.isExceeded()) {
+      return quotaService.loadFromBackup().filter((r: Reading) => r.created_at >= startDate && r.created_at <= endDate);
     }
     try {
       const q = query(
@@ -673,6 +701,13 @@ export const readingService = {
       
       return () => clearInterval(interval);
     }
+    
+    if (quotaService.isExceeded()) {
+      const backup = quotaService.loadFromBackup();
+      callback(sensorId ? backup.filter((r: Reading) => r.sensor_id === sensorId).slice(0, 20) : backup.slice(0, 50));
+      return () => {};
+    }
+
     let q;
     if (sensorId) {
       q = query(collection(db, 'readings'), 
