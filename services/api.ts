@@ -577,6 +577,14 @@ export const sensorService = {
       throw error;
     }
   },
+  update: async (identifier: string, data: Partial<Sensor>): Promise<void> => {
+    try {
+      await updateDoc(doc(db, 'sensors', identifier), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `sensors/${identifier}`);
+      throw error;
+    }
+  },
   delete: async (id: number): Promise<void> => {
     // Note: In Firestore we usually use string IDs. If id is number, we need to find the doc.
     try {

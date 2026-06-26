@@ -26,7 +26,7 @@ import {
   FileText,
   Download,
 } from "lucide-react";
-import { readingService, sensorService, authService } from "../services/api";
+import { readingService, sensorService, authService, systemLogService } from "../services/api";
 import { Reading, Sensor, User } from "../types";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useTour } from "../contexts/TourContext";
@@ -137,9 +137,9 @@ export const Dashboard: React.FC = () => {
 
   // Lógica de Conversão
   const convertTemp = (tempC: number) => {
-    return units.temperature === "F" ? tempC * 1.8 + 32 : tempC;
+    return units.system === 'imperial' || units.temperature === "F" ? tempC * 1.8 + 32 : tempC;
   };
-  const tempUnit = units.temperature === "F" ? "°F" : "°C";
+  const tempUnit = units.system === 'imperial' || units.temperature === "F" ? "°F" : "°C";
 
   // --- CÁLCULO DAS MÉTRICAS FILTRADAS ---
   const aggregatedData = useMemo(() => {
@@ -199,7 +199,7 @@ export const Dashboard: React.FC = () => {
     }
 
     return { avgTemp, avgHum, chartData };
-  }, [readings, historicalData, useHistorical, selectedIds, units.temperature]);
+  }, [readings, historicalData, useHistorical, selectedIds, units.temperature, units.system]);
 
   const generatePDF = async (
     type: "custom" | "fortnightly" | "daily" | "weekly",
@@ -372,6 +372,39 @@ export const Dashboard: React.FC = () => {
         } catch (err) {
           console.error("Não foi possível renderizar o gráfico", err);
         }
+      }
+
+      // Logs do Sistema
+      try {
+        const allLogs = await systemLogService.getLogs();
+        const filteredLogs = allLogs.filter(log => {
+          const logDate = new Date(log.created_at);
+          return logDate >= start && logDate <= end;
+        });
+
+        if (filteredLogs.length > 0) {
+          doc.addPage();
+          doc.setFontSize(14);
+          doc.setTextColor(59, 130, 246);
+          doc.text("Logs do Sistema (Período)", 14, 20);
+
+          const logData = filteredLogs.map(log => [
+            new Date(log.created_at).toLocaleString('pt-BR'),
+            log.user_name || 'Sistema',
+            log.action,
+            log.type?.toUpperCase() || ''
+          ]);
+
+          autoTable(doc, {
+            startY: 30,
+            head: [["Data/Hora", "Usuário", "Ação", "Tipo"]],
+            body: logData,
+            theme: "striped",
+            headStyles: { fillColor: [59, 130, 246] },
+          });
+        }
+      } catch (logErr) {
+        console.error("Erro ao carregar logs para o PDF", logErr);
       }
 
       doc.save(`Relatorio_${type}_${new Date().getTime()}.pdf`);

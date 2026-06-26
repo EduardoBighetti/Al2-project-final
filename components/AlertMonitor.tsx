@@ -5,15 +5,17 @@ import { notificationService } from '../services/notificationService';
 import { Reading, Sensor } from '../types';
 import { Bell, BellOff, AlertTriangle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export const AlertMonitor: React.FC = () => {
+  const { formatTemp, formatMagnitude } = useLanguage();
   const [readings, setReadings] = useState<Reading[]>([]);
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     return localStorage.getItem('alerts_enabled') !== 'false';
   });
   const [showAlert, setShowAlert] = useState(false);
-  const [alertInfo, setAlertInfo] = useState<{ sensorName: string; temp: number; limit: number } | null>(null);
+  const [alertInfo, setAlertInfo] = useState<{ sensorName: string; temp: number; limit: number; magnitudeKey?: string } | null>(null);
   
   // Guardamos o ID da última leitura que disparou alerta para não repetir no reload
   const lastAlertReadingId = useRef<Record<number, string>>({});
@@ -55,21 +57,49 @@ export const AlertMonitor: React.FC = () => {
         const isOnline = sensor && sensor.status === 'active' && (now - new Date(sensor.last_seen || 0).getTime() < 5 * 60 * 1000);
         
         const hasAlerts = sensor?.has_alerts;
-        const tempLimit = sensor?.alert_limits?.temperatura ? Number(sensor.alert_limits.temperatura) : (sensor?.temp_limit || 0);
         
-        if (isOnline && hasAlerts && tempLimit > 0 && reading.temperature >= tempLimit && (now - readingTime < 5 * 60 * 1000) && (now - readingTime >= -60000)) {
+        if (isOnline && hasAlerts && (now - readingTime < 5 * 60 * 1000) && (now - readingTime >= -60000)) {
+          let triggered = false;
+          let currentVal = 0;
+          let limit = 0;
+          let magnitudeKey = '';
+
+          // Support backward compatibility with temp_limit
+          const tempLim = sensor?.alert_limits?.temperatura ? Number(sensor.alert_limits.temperatura) : (sensor?.temp_limit || 0);
+          if (tempLim > 0 && reading.temperature >= tempLim) {
+            triggered = true;
+            currentVal = reading.temperature;
+            limit = tempLim;
+            magnitudeKey = 'temperatura';
+          }
           
-          const lastAlert = lastAlertTimestamp.current[sensor.id] || 0;
-          const lastReadingId = lastAlertReadingId.current[sensor.id] || '';
-          
-          if (reading.id && String(reading.id) !== String(lastReadingId) && (now - lastAlert > ALERT_COOLDOWN)) {
-            triggerAlert(sensor, reading.temperature);
+          if (!triggered && sensor?.alert_limits) {
+            for (const [key, val] of Object.entries(sensor.alert_limits)) {
+              if (key === 'temperatura') continue;
+              const readingVal = reading.values ? reading.values[key] : undefined;
+              if (readingVal !== undefined && Number(val) > 0 && readingVal >= Number(val)) {
+                triggered = true;
+                currentVal = readingVal;
+                limit = Number(val);
+                magnitudeKey = key;
+                break;
+              }
+            }
+          }
+
+          if (triggered) {
+            const lastAlert = lastAlertTimestamp.current[sensor.id] || 0;
+            const lastReadingId = lastAlertReadingId.current[sensor.id] || '';
             
-            lastAlertTimestamp.current[sensor.id] = now;
-            lastAlertReadingId.current[sensor.id] = String(reading.id);
-            
-            localStorage.setItem('lastAlertTimestamps', JSON.stringify(lastAlertTimestamp.current));
-            localStorage.setItem('lastAlertReadingIds', JSON.stringify(lastAlertReadingId.current));
+            if (reading.id && String(reading.id) !== String(lastReadingId) && (now - lastAlert > ALERT_COOLDOWN)) {
+              triggerAlert(sensor, currentVal, limit, magnitudeKey);
+              
+              lastAlertTimestamp.current[sensor.id] = now;
+              lastAlertReadingId.current[sensor.id] = String(reading.id);
+              
+              localStorage.setItem('lastAlertTimestamps', JSON.stringify(lastAlertTimestamp.current));
+              localStorage.setItem('lastAlertReadingIds', JSON.stringify(lastAlertReadingId.current));
+            }
           }
         }
       });
@@ -81,13 +111,16 @@ export const AlertMonitor: React.FC = () => {
     };
   }, [notificationsEnabled]);
 
-  const triggerAlert = async (sensor: Sensor, currentTemp: number) => {
-    const tempLimit = sensor?.alert_limits?.temperatura ? Number(sensor.alert_limits.temperatura) : (sensor?.temp_limit || 0);
-    const title = '🚨 ALERTA DE TEMPERATURA';
-    const message = `O sensor "${sensor.name}" atingiu ${currentTemp}°C (Limite: ${tempLimit}°C)`;
+  const triggerAlert = async (sensor: Sensor, currentVal: number, limit: number, magnitudeKey: string) => {
+    const isTemp = magnitudeKey === 'temperatura';
+    const title = isTemp ? '🚨 ALERTA DE TEMPERATURA' : `🚨 ALERTA: ${magnitudeKey.toUpperCase()}`;
+    const formattedVal = formatMagnitude ? formatMagnitude(currentVal, magnitudeKey) : currentVal.toString();
+    const formattedLimit = formatMagnitude ? formatMagnitude(limit, magnitudeKey) : limit.toString();
+    
+    const message = `O sensor "${sensor.name}" atingiu ${formattedVal} (Limite: ${formattedLimit})`;
     
     // 1. Log no sistema
-    await systemLogService.addLog('Sistema', `Alerta de temperatura crítica no sensor ${sensor.name} (${currentTemp}°C). Limite: ${tempLimit}°C`, 'danger');
+    await systemLogService.addLog('Sistema', `Alerta crítico no sensor ${sensor.name} (${formattedVal}). Limite: ${formattedLimit}`, 'danger');
 
     // 2. Notificação do Navegador (System push)
     if (notificationService.isEnabled()) {
@@ -97,8 +130,9 @@ export const AlertMonitor: React.FC = () => {
     // 3. Alerta Visual Interno (Banner)
     setAlertInfo({ 
       sensorName: sensor.name, 
-      temp: currentTemp, 
-      limit: tempLimit 
+      temp: currentVal, // keep state name temp for simplicity, though it could be generic
+      limit: limit,
+      magnitudeKey: magnitudeKey
     });
     setShowAlert(true);
     
@@ -173,12 +207,12 @@ export const AlertMonitor: React.FC = () => {
               </div>
               <div className="flex-1">
                 <h4 className="font-black text-lg uppercase leading-none mb-1">
-                  {alertInfo.sensorName === 'Sistema' ? 'Sistema de Alertas' : 'Temperatura Crítica!'}
+                  {alertInfo.sensorName === 'Sistema' ? 'Sistema de Alertas' : (alertInfo.magnitudeKey === 'temperatura' || !alertInfo.magnitudeKey ? 'Temperatura Crítica!' : `Alerta: ${alertInfo.magnitudeKey}`)}
                 </h4>
                 <p className="text-sm font-medium opacity-90">
                   {alertInfo.sensorName === 'Sistema' 
                     ? 'O monitoramento de alertas foi ativado.' 
-                    : <>Sensor <b>{alertInfo.sensorName}</b> em <b>{alertInfo.temp}°C</b>.</>}
+                    : <>Sensor <b>{alertInfo.sensorName}</b> em <b>{formatMagnitude ? formatMagnitude(alertInfo.temp, alertInfo.magnitudeKey || 'temperatura') : alertInfo.temp}</b>.</>}
                 </p>
               </div>
               <button 

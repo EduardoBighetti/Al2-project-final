@@ -1,8 +1,10 @@
 
 import React, { useEffect, useState } from 'react';
-import { Users, Shield, User as UserIcon, Calendar, Mail, MoreVertical, Key, Plus, Copy, CheckCircle2, AlertCircle, MessageSquare, Trash2, Eye, Edit2, ShieldOff, Lock, Unlock, Activity, List } from 'lucide-react';
+import { Users, Shield, User as UserIcon, Calendar, Mail, MoreVertical, Key, Plus, Copy, CheckCircle2, AlertCircle, MessageSquare, Trash2, Eye, Edit2, ShieldOff, Lock, Unlock, Activity, List, Download } from 'lucide-react';
 import { authService, accessKeyService, systemLogService, SystemLog } from '../services/api';
 import { User, AccessKey } from '../types';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export const UserManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'security' | 'logs' | 'feedback'>('users');
@@ -10,6 +12,9 @@ export const UserManagement: React.FC = () => {
   const [keys, setKeys] = useState<AccessKey[]>([]);
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [logs, setLogs] = useState<SystemLog[]>([]);
+  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [copying, setCopying] = useState<string | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
@@ -186,6 +191,88 @@ export const UserManagement: React.FC = () => {
       }
     );
     setActiveDropdown(null);
+  };
+
+  const generatePDF = async (type: "custom" | "fortnightly" | "daily" | "weekly", customStart?: string, customEnd?: string) => {
+    try {
+      let start = new Date();
+      let end = new Date();
+      let typeText = "";
+
+      if (type === "custom") {
+        if (!customStart || !customEnd) {
+          alert("Selecione as datas de início e fim.");
+          return;
+        }
+        start = new Date(customStart);
+        start.setHours(0, 0, 0, 0);
+        end = new Date(customEnd);
+        end.setHours(23, 59, 59, 999);
+        typeText = `Personalizado (${start.toLocaleDateString()} a ${end.toLocaleDateString()})`;
+      } else if (type === "fortnightly") {
+        start = new Date();
+        start.setDate(start.getDate() - 15);
+        start.setHours(0, 0, 0, 0);
+        end = new Date();
+        end.setHours(23, 59, 59, 999);
+        typeText = "Quinzenal (Últimos 15 dias)";
+      } else if (type === "daily") {
+        start = new Date();
+        start.setHours(0, 0, 0, 0);
+        end = new Date();
+        end.setHours(23, 59, 59, 999);
+        typeText = "Diário (Últimas 24 horas)";
+      } else {
+        start = new Date();
+        start.setDate(start.getDate() - 7);
+        start.setHours(0, 0, 0, 0);
+        end = new Date();
+        end.setHours(23, 59, 59, 999);
+        typeText = "Semanal (Últimos 7 dias)";
+      }
+
+      const allLogs = await systemLogService.getLogs();
+      const filteredLogs = allLogs.filter(log => {
+        const logDate = new Date(log.created_at);
+        return logDate >= start && logDate <= end;
+      });
+
+      const doc = new jsPDF();
+      
+      doc.setFontSize(22);
+      doc.setTextColor(59, 130, 246);
+      doc.text("AL2 IoT Dashboard", 14, 20);
+
+      doc.setFontSize(14);
+      doc.setTextColor(100);
+      doc.text(`Relatório de Logs - ${typeText}`, 14, 30);
+
+      if (filteredLogs.length === 0) {
+        doc.setFontSize(12);
+        doc.setTextColor(0);
+        doc.text("Nenhum log encontrado para o período selecionado.", 14, 45);
+      } else {
+        const logData = filteredLogs.map(log => [
+          new Date(log.created_at).toLocaleString('pt-BR'),
+          log.user_name || 'Sistema',
+          log.action,
+          log.type?.toUpperCase() || ''
+        ]);
+
+        autoTable(doc, {
+          startY: 40,
+          head: [["Data/Hora", "Usuário", "Ação", "Tipo"]],
+          body: logData,
+          theme: "striped",
+          headStyles: { fillColor: [59, 130, 246] },
+        });
+      }
+      
+      doc.save(`Relatorio_Logs_${type}_${new Date().getTime()}.pdf`);
+    } catch (error) {
+      console.error("Erro ao gerar PDF", error);
+      alert("Falha ao gerar relatório.");
+    }
   };
 
   // Fechar dropdown ao clicar fora
@@ -436,49 +523,82 @@ export const UserManagement: React.FC = () => {
           </div>
         </div>
       ) : activeTab === 'logs' ? (
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/30">
-            <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
-              <Activity size={18} className="text-blue-500" />
-              Logs de Auditoria
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">Registros de todas as atividades críticas do sistema.</p>
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <button
+              onClick={() => generatePDF('daily')}
+              className="flex flex-col items-center justify-center p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 hover:border-blue-500 transition-all gap-2"
+            >
+              <Download size={20} className="text-blue-500" />
+              <span className="text-xs font-bold uppercase text-gray-700 dark:text-gray-300">Relatório Diário</span>
+            </button>
+            <button
+              onClick={() => generatePDF('weekly')}
+              className="flex flex-col items-center justify-center p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 hover:border-blue-500 transition-all gap-2"
+            >
+              <Download size={20} className="text-blue-500" />
+              <span className="text-xs font-bold uppercase text-gray-700 dark:text-gray-300">Relatório Semanal</span>
+            </button>
+            <button
+              onClick={() => generatePDF('fortnightly')}
+              className="flex flex-col items-center justify-center p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 hover:border-blue-500 transition-all gap-2"
+            >
+              <Download size={20} className="text-blue-500" />
+              <span className="text-xs font-bold uppercase text-gray-700 dark:text-gray-300">Relatório Quinzenal</span>
+            </button>
+            <button
+              onClick={() => setShowCustomDateModal(true)}
+              className="flex flex-col items-center justify-center p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 hover:border-blue-500 transition-all gap-2"
+            >
+              <Download size={20} className="text-blue-500" />
+              <span className="text-xs font-bold uppercase text-gray-700 dark:text-gray-300">Personalizado</span>
+            </button>
           </div>
-          {loading ? (
-            <div className="text-center py-20 text-gray-500">Buscando logs...</div>
-          ) : logs.length === 0 ? (
-            <div className="text-center py-20 text-gray-500">Nenhum registro de atividade encontrado nos últimos 5 dias.</div>
-          ) : (
-            <div className="divide-y divide-gray-100 dark:divide-slate-700">
-              {logs.map((log, index) => (
-                <div key={log.id || index} className="p-4 px-6 hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors flex items-start gap-4">
-                  <div className={`p-2 rounded-lg flex-shrink-0 mt-1 ${
-                    log.type === 'danger' ? 'bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400' :
-                    log.type === 'security' ? 'bg-amber-50 text-amber-500 dark:bg-amber-500/10 dark:text-amber-400' :
-                    log.type === 'edit' ? 'bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-400' :
-                    'bg-slate-50 text-slate-500 dark:bg-slate-700/50 dark:text-slate-400'
-                  }`}>
-                    {log.type === 'danger' ? <Trash2 size={18} /> :
-                     log.type === 'security' ? <Shield size={18} /> :
-                     log.type === 'edit' ? (log.action.toLowerCase().includes('adicionou') || log.action.toLowerCase().includes('criou') ? <Plus size={18} /> : <Edit2 size={18} />) :
-                     <Activity size={18} />}
-                  </div>
-                  <div className="flex-1 flex flex-col">
-                    <div className="flex justify-between items-start">
-                      <span className="font-bold text-gray-800 dark:text-white uppercase text-sm">
-                        {log.type === 'edit' || log.type === 'security' || log.type === 'danger' || log.type === 'info' ? log.action.split(' ')[0].toUpperCase() : log.type || 'SYSTEM_ACTION'}
-                      </span>
-                      <span className="text-xs font-mono text-gray-400">
-                        {log.created_at ? new Date(log.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
-                      </span>
-                    </div>
-                    <span className="text-sm text-gray-600 dark:text-gray-300 mt-1">{log.action}</span>
-                    <span className="text-[10px] text-blue-500 font-bold uppercase mt-2">POR: {log.user_name}</span>
-                  </div>
-                </div>
-              ))}
+
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/30">
+              <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                <Activity size={18} className="text-blue-500" />
+                Logs de Auditoria
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">Registros de todas as atividades críticas do sistema.</p>
             </div>
-          )}
+            {loading ? (
+              <div className="text-center py-20 text-gray-500">Buscando logs...</div>
+            ) : logs.length === 0 ? (
+              <div className="text-center py-20 text-gray-500">Nenhum registro de atividade encontrado nos últimos 5 dias.</div>
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-slate-700">
+                {logs.map((log, index) => (
+                  <div key={log.id || index} className="p-4 px-6 hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors flex items-start gap-4">
+                    <div className={`p-2 rounded-lg flex-shrink-0 mt-1 ${
+                      log.type === 'danger' ? 'bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400' :
+                      log.type === 'security' ? 'bg-amber-50 text-amber-500 dark:bg-amber-500/10 dark:text-amber-400' :
+                      log.type === 'edit' ? 'bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-400' :
+                      'bg-slate-50 text-slate-500 dark:bg-slate-700/50 dark:text-slate-400'
+                    }`}>
+                      {log.type === 'danger' ? <Trash2 size={18} /> :
+                       log.type === 'security' ? <Shield size={18} /> :
+                       log.type === 'edit' ? (log.action.toLowerCase().includes('adicionou') || log.action.toLowerCase().includes('criou') ? <Plus size={18} /> : <Edit2 size={18} />) :
+                       <Activity size={18} />}
+                    </div>
+                    <div className="flex-1 flex flex-col">
+                      <div className="flex justify-between items-start">
+                        <span className="font-bold text-gray-800 dark:text-white uppercase text-sm">
+                          {log.type === 'edit' || log.type === 'security' || log.type === 'danger' || log.type === 'info' ? log.action.split(' ')[0].toUpperCase() : log.type || 'SYSTEM_ACTION'}
+                        </span>
+                        <span className="text-xs font-mono text-gray-400">
+                          {log.created_at ? new Date(log.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-600 dark:text-gray-300 mt-1">{log.action}</span>
+                      <span className="text-[10px] text-blue-500 font-bold uppercase mt-2">POR: {log.user_name || 'Sistema'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden">
@@ -573,6 +693,60 @@ export const UserManagement: React.FC = () => {
                   Confirmar
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Custom Date */}
+      {showCustomDateModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden border border-gray-100 dark:border-slate-700">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center">
+              <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                <Calendar size={18} className="text-blue-500" />
+                Período Personalizado
+              </h3>
+              <button onClick={() => setShowCustomDateModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                &times;
+              </button>
+            </div>
+            <div className="p-6 text-gray-600 dark:text-gray-300 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Data de Início</label>
+                <input 
+                  type="date" 
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Data de Fim</label>
+                <input 
+                  type="date" 
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 dark:bg-slate-700/50 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowCustomDateModal(false)}
+                className="px-4 py-2 rounded-lg font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors text-sm"
+              >
+                Cancelar
+              </button>
+              <button 
+                disabled={!customStartDate || !customEndDate}
+                onClick={() => {
+                  generatePDF('custom', customStartDate, customEndDate);
+                  setShowCustomDateModal(false);
+                }}
+                className="px-4 py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2 text-sm"
+              >
+                <Download size={16} /> Emitir
+              </button>
             </div>
           </div>
         </div>

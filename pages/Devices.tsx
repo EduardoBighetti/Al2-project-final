@@ -35,7 +35,7 @@ interface NewSensorState {
 }
 
 export const Devices: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, formatTemp, formatMagnitude, convertMagnitudeValue, revertMagnitudeValue, getMagnitudeUnit } = useLanguage();
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newSensor, setNewSensor] = useState<NewSensorState>({
@@ -55,6 +55,9 @@ export const Devices: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [copying, setCopying] = useState<string | null>(null);
+
+  const [editingLimitSensor, setEditingLimitSensor] = useState<Sensor | null>(null);
+  const [editingAlertLimits, setEditingAlertLimits] = useState<Record<string, string>>({});
 
   // State for inline editing
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -160,27 +163,55 @@ export const Devices: React.FC = () => {
     }
   };
 
-  const startEditing = (sensor: Sensor) => {
-    setEditingId(sensor.identifier);
-    setTargetLimit(sensor.temp_limit?.toString() || "");
+  const startEditingLimits = (sensor: Sensor) => {
+    setEditingLimitSensor(sensor);
+    
+    // Populate with existing alert_limits, or temp_limit if alert_limits is empty
+    const initialLimits: Record<string, string> = {};
+    if (sensor.alert_limits && Object.keys(sensor.alert_limits).length > 0) {
+      for (const [key, val] of Object.entries(sensor.alert_limits)) {
+        initialLimits[key] = convertMagnitudeValue(Number(val), key).toFixed(1).replace(/\.0$/, '');
+      }
+    } else if (sensor.temp_limit) {
+      initialLimits['temperatura'] = convertMagnitudeValue(sensor.temp_limit, 'temperatura').toFixed(1).replace(/\.0$/, '');
+    }
+    
+    setEditingAlertLimits(initialLimits);
   };
 
-  const saveLimit = async (sensor: Sensor) => {
+  const saveLimitsModal = async () => {
+    if (!editingLimitSensor) return;
     try {
-      const val = parseFloat(targetLimit);
-      if (!isNaN(val)) {
-        await sensorService.updateLimit(sensor.identifier, val);
-        if (currentUser) {
-          await systemLogService.addLog(
-            currentUser.full_name || currentUser.username,
-            `Alterou o limite de temperatura do dispositivo ${sensor.name} para ${val}°C`,
-            "edit",
-          );
+      const parsedAlertLimits: Record<string, number> = {};
+      for (const [key, val] of Object.entries(editingAlertLimits)) {
+        if (val.trim() !== "") {
+          const numVal = parseFloat(val);
+          if (!isNaN(numVal)) {
+            parsedAlertLimits[key] = revertMagnitudeValue(numVal, key);
+          }
         }
       }
-      setEditingId(null);
+      
+      const hasAlerts = Object.keys(parsedAlertLimits).length > 0;
+      // Maintain temp_limit fallback for compatibility
+      const tempLimitFallback = parsedAlertLimits['temperatura'] !== undefined ? parsedAlertLimits['temperatura'] : undefined;
+
+      await sensorService.update(editingLimitSensor.identifier, {
+        alert_limits: parsedAlertLimits,
+        has_alerts: hasAlerts,
+        ...(tempLimitFallback !== undefined && { temp_limit: tempLimitFallback }),
+      });
+      
+      if (currentUser) {
+        await systemLogService.addLog(
+          currentUser.full_name || currentUser.username,
+          `Atualizou os limites de alerta do dispositivo ${editingLimitSensor.name}`,
+          "edit",
+        );
+      }
+      setEditingLimitSensor(null);
     } catch (err) {
-      console.error("Erro ao atualizar limite", err);
+      console.error("Erro ao atualizar limites", err);
     }
   };
 
@@ -346,56 +377,35 @@ export const Devices: React.FC = () => {
                               </div>
                             </td>
                             <td className="px-6 py-4 text-center">
-                              {editingId === sensor.identifier ? (
-                                <div className="flex items-center justify-center gap-1">
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    autoFocus
-                                    className="w-16 px-2 py-1 text-xs border border-blue-500 rounded bg-white dark:bg-slate-900 text-gray-900 dark:text-white outline-none"
-                                    value={targetLimit}
-                                    onChange={(e) =>
-                                      setTargetLimit(e.target.value)
-                                    }
-                                    onKeyDown={(e) =>
-                                      e.key === "Enter" && saveLimit(sensor)
-                                    }
+                              <div
+                                onClick={() =>
+                                  canManage && startEditingLimits(sensor)
+                                }
+                                className={`group/limit cursor-pointer text-xs font-bold px-2 py-1 rounded-lg inline-flex items-center gap-2 transition-all ${
+                                  (sensor.alert_limits && Object.keys(sensor.alert_limits).length > 0) || sensor.temp_limit
+                                    ? "text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100"
+                                    : "text-gray-400 bg-gray-50 dark:bg-slate-700/50 hover:bg-gray-100"
+                                }`}
+                              >
+                                {sensor.alert_limits && Object.keys(sensor.alert_limits).length > 0
+                                  ? Object.entries(sensor.alert_limits)
+                                      .map(([key, val]) => {
+                                        const mag = getMagnitudeByKey(key);
+                                        let formattedValue = formatMagnitude ? formatMagnitude(Number(val), key) : val;
+                                        if (formattedValue === val.toString() && mag) formattedValue = `${val}${mag.unit}`;
+                                        return mag ? `${formattedValue} (${mag.name})` : `${formattedValue} (${key})`;
+                                      })
+                                      .join(", ")
+                                  : sensor.temp_limit
+                                  ? `${formatTemp(Number(sensor.temp_limit))} (Temperatura)`
+                                  : "SEM LIMITE"}
+                                {canManage && (
+                                  <Edit2
+                                    size={10}
+                                    className="opacity-0 group-hover/limit:opacity-100 transition-opacity"
                                   />
-                                  <button
-                                    onClick={() => saveLimit(sensor)}
-                                    className="p-1 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded"
-                                  >
-                                    <Check size={14} />
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingId(null)}
-                                    className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                                  >
-                                    <CloseIcon size={14} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div
-                                  onClick={() =>
-                                    canManage && startEditing(sensor)
-                                  }
-                                  className={`group/limit cursor-pointer text-xs font-bold px-2 py-1 rounded-lg inline-flex items-center gap-2 transition-all ${
-                                    sensor.temp_limit
-                                      ? "text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100"
-                                      : "text-gray-400 bg-gray-50 dark:bg-slate-700/50 hover:bg-gray-100"
-                                  }`}
-                                >
-                                  {sensor.temp_limit
-                                    ? `${sensor.temp_limit}°C`
-                                    : "SEM LIMITE"}
-                                  {canManage && (
-                                    <Edit2
-                                      size={10}
-                                      className="opacity-0 group-hover/limit:opacity-100 transition-opacity"
-                                    />
-                                  )}
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </td>
                             <td className="px-6 py-4">
                               <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">
@@ -698,6 +708,108 @@ export const Devices: React.FC = () => {
                   </button>
                 </div>
               </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Edit Limits Modal */}
+      <AnimatePresence>
+        {editingLimitSensor && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingLimitSensor(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden border border-gray-100 dark:border-slate-700"
+            >
+              <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center bg-gray-50/50 dark:bg-slate-800/50">
+                <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <ShieldCheck size={18} className="text-red-500" /> 
+                  Limites de Alerta
+                </h3>
+                <button
+                  onClick={() => setEditingLimitSensor(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                >
+                  <CloseIcon size={20} />
+                </button>
+              </div>
+
+              <div className="p-6">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                  Editando limites para <strong>{editingLimitSensor.name}</strong>.
+                </p>
+
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                  {editingLimitSensor.monitored_magnitudes?.length > 0 ? (
+                    editingLimitSensor.monitored_magnitudes.map(key => {
+                      const mag = getMagnitudeByKey(key);
+                      if (!mag) return null;
+                      return (
+                        <div key={key}>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
+                            Limite de {mag.name} ({getMagnitudeUnit(key, mag.unit)})
+                          </label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            placeholder="Sem limite"
+                            className="w-full px-3 py-2 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-red-500 outline-none transition-all text-sm"
+                            value={editingAlertLimits[key] || ""}
+                            onChange={(e) =>
+                              setEditingAlertLimits({
+                                ...editingAlertLimits,
+                                [key]: e.target.value
+                              })
+                            }
+                          />
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
+                        Limite de Temperatura ({getMagnitudeUnit('temperatura', '°C')})
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        placeholder="Sem limite"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-red-500 outline-none transition-all text-sm"
+                        value={editingAlertLimits['temperatura'] || ""}
+                        onChange={(e) =>
+                          setEditingAlertLimits({
+                            ...editingAlertLimits,
+                            ['temperatura']: e.target.value
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={() => setEditingLimitSensor(null)}
+                    className="flex-1 px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 rounded-xl hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={saveLimitsModal}
+                    className="flex-1 px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-500/30 flex items-center justify-center gap-2"
+                  >
+                    <Check size={16} /> Salvar
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

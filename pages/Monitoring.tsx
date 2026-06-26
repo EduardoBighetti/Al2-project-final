@@ -123,7 +123,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({
 };
 
 export const Monitoring: React.FC = () => {
-  const { t, units } = useLanguage();
+  const { t, units, convertMagnitudeValue, getMagnitudeUnit, formatMagnitude } = useLanguage();
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [selectedSensorId, setSelectedSensorId] = useState<string>("");
   const [readings, setReadings] = useState<Reading[]>([]);
@@ -205,11 +205,6 @@ export const Monitoring: React.FC = () => {
     selectedSensor?.last_seen &&
     Date.now() - new Date(selectedSensor.last_seen).getTime() < 300000; // 5 minutos em ms
 
-  const convertTemp = (tempC: number) => {
-    return units.temperature === "F" ? tempC * 1.8 + 32 : tempC;
-  };
-  const tempUnit = units.temperature === "F" ? "°F" : "°C";
-
   const chartData = React.useMemo(() => {
     const dataSource = useHistorical
       ? historicalData
@@ -237,7 +232,7 @@ export const Monitoring: React.FC = () => {
         if (!timeGroups[time][key]) timeGroups[time][key] = [];
         const val = getReadingValue(r, key);
         if (val !== undefined) {
-          const finalVal = key === "temperatura" ? convertTemp(val) : val;
+          const finalVal = convertMagnitudeValue(val, key);
           timeGroups[time][key].push(finalVal);
         }
       });
@@ -260,10 +255,10 @@ export const Monitoring: React.FC = () => {
     }
 
     return groupedData;
-  }, [readings, historicalData, useHistorical, units.temperature, monitoredMagnitudesKeys]);
+  }, [readings, historicalData, useHistorical, units.temperature, units.system, monitoredMagnitudesKeys]);
 
   const latestTempDisplay = latestReading
-    ? convertTemp(latestReading.temperature).toFixed(1)
+    ? convertMagnitudeValue(latestReading.temperature, "temperatura").toFixed(1)
     : "--";
 
   return (
@@ -328,9 +323,9 @@ export const Monitoring: React.FC = () => {
                 const isTemp = key === "temperatura";
                 let displayVal = "--";
                 if (rawVal !== undefined) {
-                  displayVal = isTemp ? convertTemp(rawVal).toFixed(1) : rawVal.toFixed(1);
+                  displayVal = convertMagnitudeValue(rawVal, key).toFixed(1);
                 }
-                const unit = isTemp ? tempUnit : mag.unit;
+                const unit = getMagnitudeUnit(key, mag.unit);
                 
                 return (
                   <motion.div
@@ -614,13 +609,12 @@ export const Monitoring: React.FC = () => {
                           </td>
                           {monitoredMagnitudesKeys.map(key => {
                             const val = getReadingValue(r, key);
-                            const isTemp = key === "temperatura";
                             let displayVal = "--";
                             if (val !== undefined) {
-                               displayVal = isTemp ? convertTemp(val).toFixed(1) : val.toFixed(1);
+                               displayVal = convertMagnitudeValue(val, key).toFixed(1);
                             }
                             const mag = getMagnitudeByKey(key);
-                            const unit = isTemp ? tempUnit : mag?.unit || "";
+                            const unit = getMagnitudeUnit(key, mag?.unit || "");
                             
                             return (
                               <td key={key} className="px-8 py-4 text-center">
