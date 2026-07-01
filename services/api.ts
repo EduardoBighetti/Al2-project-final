@@ -29,6 +29,22 @@ import { User, Sensor, Reading, AccessKey } from '../types';
 // TEST MODE CONFIGURATION
 const TEST_MODE_KEY = 'al2_iot_test_mode';
 
+
+// Helper para converter dados do Firestore
+const convertFirestoreData = (data: any, id?: string) => {
+  const result = { ...data };
+  if (id && result.id === undefined) {
+    result.id = id;
+  }
+  if (result.last_seen && typeof result.last_seen.toDate === 'function') {
+    result.last_seen = result.last_seen.toDate().toISOString();
+  }
+  if (result.created_at && typeof result.created_at.toDate === 'function') {
+    result.created_at = result.created_at.toDate().toISOString();
+  }
+  return result;
+};
+
 export const testModeService = {
   isActive: (): boolean => {
     return localStorage.getItem(TEST_MODE_KEY) === 'true';
@@ -532,7 +548,7 @@ export const sensorService = {
     }
     try {
       const querySnapshot = await getDocs(collection(db, 'sensors'));
-      return querySnapshot.docs.map(doc => doc.data() as Sensor);
+      return querySnapshot.docs.map(doc => convertFirestoreData(doc.data(), doc.id) as Sensor);
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'sensors');
       return [];
@@ -548,7 +564,7 @@ export const sensorService = {
       return () => {};
     }
     return onSnapshot(collection(db, 'sensors'), (snapshot) => {
-      const sensors = snapshot.docs.map(doc => doc.data() as Sensor);
+      const sensors = snapshot.docs.map(doc => convertFirestoreData(doc.data(), doc.id) as Sensor);
       quotaService.saveSensorsToBackup(sensors);
       callback(sensors);
     }, (error) => {
@@ -616,6 +632,7 @@ export const sensorService = {
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `sensors/${id}`);
+      throw error;
     }
   }
 };
@@ -635,19 +652,19 @@ export const readingService = {
     try {
       let q;
       if (sensorId) {
-        q = query(collection(db, 'readings'), 
+        q = query(collection(db, 'sensor_readings'), 
           where('sensor_id', '==', sensorId), 
           orderBy('created_at', 'desc'), 
           limit(20)
         );
       } else {
-        q = query(collection(db, 'readings'), 
+        q = query(collection(db, 'sensor_readings'), 
           orderBy('created_at', 'desc'), 
-          limit(50)
+          limit(100)
         );
       }
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => doc.data() as Reading);
+      return querySnapshot.docs.map(doc => convertFirestoreData(doc.data(), doc.id) as Reading);
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'readings');
       return [];
@@ -662,14 +679,14 @@ export const readingService = {
     }
     try {
       const q = query(
-        collection(db, 'readings'),
+        collection(db, 'sensor_readings'),
         where('created_at', '>=', startDate),
         where('created_at', '<=', endDate),
         orderBy('created_at', 'asc'),
         limit(1000)
       );
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => doc.data() as Reading);
+      return querySnapshot.docs.map(doc => convertFirestoreData(doc.data(), doc.id) as Reading);
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'readings/historical');
       return [];
@@ -710,19 +727,43 @@ export const readingService = {
 
     let q;
     if (sensorId) {
-      q = query(collection(db, 'readings'), 
+      q = query(collection(db, 'sensor_readings'), 
         where('sensor_id', '==', sensorId), 
         orderBy('created_at', 'desc'), 
         limit(20)
       );
     } else {
-      q = query(collection(db, 'readings'), 
+      q = query(collection(db, 'sensor_readings'), 
         orderBy('created_at', 'desc'), 
-        limit(50)
+        limit(100)
       );
     }
     return onSnapshot(q, (snapshot) => {
-      const readings = snapshot.docs.map(doc => doc.data() as Reading);
+      const readings = snapshot.docs.map(doc => convertFirestoreData(doc.data(), doc.id) as Reading);
+      
+      // INTELIGÊNCIA: Monitor Global
+      // Sincronização do Status Offline/Online baseada nas leituras em tempo real
+      if (readings.length > 0) {
+        const latest = readings[0];
+        if (latest.sensor_identifier && latest.created_at) {
+          const sensorsRef = collection(db, 'sensors');
+          const qSensor = query(sensorsRef, where('identifier', '==', latest.sensor_identifier), limit(1));
+          getDocs(qSensor).then(sensorSnap => {
+            if (!sensorSnap.empty) {
+              const sensorDoc = sensorSnap.docs[0];
+              const sensorData = sensorDoc.data();
+              // Atualiza se a nova leitura for mais recente que o last_seen atual, ou se o sensor estiver offline
+              if (sensorData.status !== 'active' || !sensorData.last_seen || new Date(latest.created_at) > new Date(sensorData.last_seen)) {
+                updateDoc(sensorDoc.ref, {
+                  status: 'active',
+                  last_seen: latest.created_at
+                }).catch(err => console.error("Erro na sincronização:", err));
+              }
+            }
+          }).catch(err => console.error("Erro ao buscar sensor:", err));
+        }
+      }
+
       quotaService.saveToBackup(readings);
       callback(readings);
     }, (error) => {
@@ -767,7 +808,7 @@ export const readingService = {
         created_at: new Date().toISOString()
       };
 
-      await addDoc(collection(db, 'readings'), newReading);
+      await addDoc(collection(db, 'sensor_readings'), newReading);
       
       // Also update sensor's last_seen
       if (!querySnapshot.empty) {

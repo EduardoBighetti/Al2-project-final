@@ -12,6 +12,7 @@ import {
   Cpu,
   Monitor,
   LayoutDashboard,
+  Code,
 } from "lucide-react";
 import { useTour, TourType } from "../contexts/TourContext";
 import { useNavigate } from "react-router-dom";
@@ -19,7 +20,7 @@ import { useNavigate } from "react-router-dom";
 export const Tutorial = () => {
   const { startTour } = useTour();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"tour" | "telegram" | "whatsapp">(
+  const [activeTab, setActiveTab] = useState<"tour" | "telegram" | "whatsapp" | "code">(
     "tour",
   );
 
@@ -70,6 +71,16 @@ export const Tutorial = () => {
           }`}
         >
           <MessageSquare size={18} /> Alertas no WhatsApp
+        </button>
+        <button
+          onClick={() => setActiveTab("code")}
+          className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+            activeTab === "code"
+              ? "bg-purple-600 text-white shadow-md"
+              : "bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700"
+          }`}
+        >
+          <Code size={18} /> Código (ESP32)
         </button>
       </div>
 
@@ -359,6 +370,151 @@ export const Tutorial = () => {
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Dica: Adicione o número do bot aos seus favoritos para garantir
                 que as notificações façam som mesmo em modo "Não Perturbe".
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === "code" && (
+          <motion.div
+            key="code"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-white dark:bg-slate-800 rounded-2xl p-8 border border-gray-200 dark:border-slate-700 shadow-sm"
+          >
+            <div className="flex flex-col gap-8">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">
+                  Integração do Código (ESP32)
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
+                  Siga os passos abaixo para configurar o código no seu microcontrolador (ESP32) e conectá-lo corretamente ao nosso sistema, enviando e recebendo dados em tempo real.
+                </p>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black flex-shrink-0">
+                  1
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-800 dark:text-white text-lg">
+                    Requisitos e Bibliotecas
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mt-1">
+                    Certifique-se de ter as seguintes bibliotecas instaladas na sua IDE (ex: Arduino IDE ou VSCode com PlatformIO):
+                  </p>
+                  <ul className="list-disc pl-5 mt-2 text-gray-600 dark:text-gray-400 space-y-1">
+                    <li><code className="bg-gray-100 dark:bg-slate-900 px-1 py-0.5 rounded text-purple-500 font-mono text-sm">WiFi.h</code> (Para conexão do ESP32 à internet)</li>
+                    <li><code className="bg-gray-100 dark:bg-slate-900 px-1 py-0.5 rounded text-purple-500 font-mono text-sm">HTTPClient.h</code> (Para requisições à API do sistema)</li>
+                    <li><code className="bg-gray-100 dark:bg-slate-900 px-1 py-0.5 rounded text-purple-500 font-mono text-sm">ArduinoJson.h</code> (Para manipulação de dados em JSON)</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black flex-shrink-0">
+                  2
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-800 dark:text-white text-lg">
+                    Configuração de WiFi e Endpoint (URL)
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mt-1 mb-2">
+                    No início do seu código, você deve preencher o nome da sua rede WiFi e a senha, bem como a URL pública gerada para a sua API:
+                  </p>
+                  <pre className="bg-slate-900 text-slate-300 p-4 rounded-xl overflow-x-auto text-sm border border-slate-700 whitespace-pre">
+                    <code>{`const char* ssid = "NOME_DA_REDE";
+const char* password = "SENHA_DA_REDE";
+
+// URL EXATA PARA O FIRESTORE (A que sempre funcionou!)
+// Envia os dados direto para o banco de dados sem bloqueios do AI Studio.
+const char* firestoreReadingsUrl = "https://firestore.googleapis.com/v1/projects/gen-lang-client-0517069904/databases/ai-studio-fcb91bed-d540-4bd5-8d9e-5bc840091e07/documents:commit";`}</code>
+                  </pre>
+                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/50 rounded-lg flex gap-2 text-sm text-yellow-800 dark:text-yellow-200">
+                    <span className="font-bold shrink-0">💡 Dica de Ouro:</span>
+                    <p>
+                      Sempre use a URL direta do Firestore acima no seu ESP32. O sistema do painel já possui a "Inteligência do Monitor Global" que detecta o novo dado na tabela e automaticamente deixa o sensor <strong>Online</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black flex-shrink-0">
+                  3
+                </div>
+                <div className="flex-1 w-full max-w-full overflow-hidden">
+                  <h3 className="font-bold text-gray-800 dark:text-white text-lg">
+                    Enviando Dados para a API
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mt-1 mb-2">
+                    O ESP32 envia os dados via HTTP POST diretamente para o banco de dados. O envio simples resolve o erro 400!
+                  </p>
+                  <pre className="bg-slate-900 text-slate-300 p-4 rounded-xl overflow-x-auto text-sm border border-slate-700 whitespace-pre">
+                    <code>{`// O identifier DEVE ser EXATAMENTE igual ao "ID / MAC" cadastrado no painel!
+String identifier = "ESP32";
+float temperature = 25.4;
+float humidity = 60.2;
+
+// Se a temperatura falhar, não enviar (evita Erro 400)
+if (isnan(temperature) || isnan(humidity)) {
+  Serial.println("Falha na leitura! Ignorando envio.");
+  return;
+}
+
+// A URL exata para garantir os dados e horário em tempo real
+String commitUrl = "https://firestore.googleapis.com/v1/projects/gen-lang-client-0517069904/databases/ai-studio-fcb91bed-d540-4bd5-8d9e-5bc840091e07/documents:commit";
+
+// Se a temperatura falhar, não enviar (evita Erro 400)
+if (isnan(temperature) || isnan(humidity)) {
+  Serial.println("Falha na leitura! Ignorando envio.");
+  return;
+}
+
+// Gerar ID único para o documento
+String readingId = String(random(1000000)) + String(random(1000000));
+String docPath = "projects/gen-lang-client-0517069904/databases/ai-studio-fcb91bed-d540-4bd5-8d9e-5bc840091e07/documents/sensor_readings/" + readingId;
+
+// FORMATO JSON COM TIMESTAMP DO SERVIDOR DO GOOGLE
+String jsonBody = "{\\"writes\\":[";
+jsonBody += "{\\"update\\":{\\"name\\":\\"" + docPath + "\\",\\"fields\\":{\\"sensor_identifier\\":{\\"stringValue\\":\\"" + identifier + "\\"},\\"temperature\\":{\\"doubleValue\\":" + String(temperature) + "},\\"humidity\\":{\\"doubleValue\\":" + String(humidity) + "}}}},";
+jsonBody += "{\\"transform\\":{\\"document\\":\\"" + docPath + "\\",\\"fieldTransforms\\":[{\\"fieldPath\\":\\"created_at\\",\\"setToServerValue\\":\\"REQUEST_TIME\\"}]}}";
+jsonBody += "]}";
+
+HTTPClient http;
+http.begin(commitUrl);
+http.addHeader("Content-Type", "application/json");
+int responseCode = http.POST(jsonBody);
+
+Serial.print("Resposta da API (200 = Sucesso): ");
+Serial.println(responseCode);
+http.end();`}</code>
+                  </pre>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black flex-shrink-0">
+                  4
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-800 dark:text-white text-lg">
+                    Aba "Integração Arduino"
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mt-1">
+                    Na barra lateral do sistema, acesse a página de <strong>Integração Arduino</strong>. Lá você tem um ambiente via porta Serial pelo navegador (Web Serial API). 
+                    Ao conectar o ESP32 no USB do seu computador, você poderá monitorar os logs (Serial.print) e enviar comandos diretamente do sistema para testes.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="mt-8 p-4 bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 rounded-xl flex gap-3 items-center">
+              <Code className="text-purple-500 flex-shrink-0" />
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Lembre-se: Você precisa ter cadastrado um dispositivo na aba "Dispositivos" antes de começar a enviar dados, para que os IDs coincidam e o painel exiba tudo corretamente.
               </p>
             </div>
           </motion.div>

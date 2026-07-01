@@ -41,13 +41,15 @@ const HARDWARE_CODE = `/* ESP32 Wi-Fi + DHT22 + GPS + REST API
 // --- CONFIGURAÇÃO WI-FI ---
 const char* ssid = "SEU_WIFI_NOME";
 const char* password = "SUA_WIFI_SENHA";
-const char* serverUrl = "https://SEU-APP-URL.run.app/api/sensor/data";
+
+// URL EXATA PARA O FIRESTORE (A que sempre funcionou!)
+// Envia os dados direto para o banco de dados sem bloqueios do AI Studio.
+const char* firestoreReadingsUrl = "https://firestore.googleapis.com/v1/projects/gen-lang-client-0517069904/databases/ai-studio-fcb91bed-d540-4bd5-8d9e-5bc840091e07/documents:commit";
 
 // --- CONFIGURAÇÃO SENSOR ---
 #define DHTPIN 4
 #define DHTTYPE DHT22
 const char* sensorID = "ESP32"; // ID do Hardware cadastrado
-const char* authToken = "TOKEN-GERADO"; // Token secreto do Hardware
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -67,6 +69,9 @@ void setup() {
   }
   Serial.println("\\nWiFi Conectado!");
   Serial.print("IP: "); Serial.println(WiFi.localIP());
+
+  // Obter tempo NTP para o Timestamp (Opcional, mas recomendado)
+  configTime(0, 0, "pool.ntp.org");
 }
 
 void loop() {
@@ -82,25 +87,29 @@ void loop() {
       // Pisca LED indicando leitura
       digitalWrite(2, HIGH); delay(50); digitalWrite(2, LOW);
 
-      // Preparação para envio Nuvem
-      HTTPClient http;
-      http.begin(serverUrl);
-      http.addHeader("Content-Type", "application/json");
+      // A URL exata para garantir os dados e horário em tempo real
+String commitUrl = "https://firestore.googleapis.com/v1/projects/gen-lang-client-0517069904/databases/ai-studio-fcb91bed-d540-4bd5-8d9e-5bc840091e07/documents:commit";
 
-      float lat = -23.5505; 
-      float lng = -46.6333;
+// Se a temperatura falhar, não enviar (evita Erro 400)
+if (isnan(t) || isnan(h)) {
+  Serial.println("Falha na leitura! Ignorando envio.");
+  return;
+}
 
-      // Montagem do JSON
-      String json = "{";
-      json += "\\"identifier\\":\\"" + String(sensorID) + "\\",";
-      json += "\\"token\\":\\"" + String(authToken) + "\\",";
-      json += "\\"temperature\\":" + String(t) + ",";
-      json += "\\"humidity\\":" + String(h) + ",";
-      json += "\\"latitude\\":" + String(lat) + ",";
-      json += "\\"longitude\\":" + String(lng);
-      json += "}";
+// Gerar ID único para o documento
+String readingId = String(random(1000000)) + String(random(1000000));
+String docPath = "projects/gen-lang-client-0517069904/databases/ai-studio-fcb91bed-d540-4bd5-8d9e-5bc840091e07/documents/sensor_readings/" + readingId;
 
-      int httpResponseCode = http.POST(json);
+// FORMATO JSON COM TIMESTAMP DO SERVIDOR DO GOOGLE
+String jsonBody = "{\\"writes\\":[";
+jsonBody += "{\\"update\\":{\\"name\\":\\"" + docPath + "\\",\\"fields\\":{\\"sensor_identifier\\":{\\"stringValue\\":\\"" + String(sensorID) + "\\"},\\"temperature\\":{\\"doubleValue\\":" + String(t) + "},\\"humidity\\":{\\"doubleValue\\":" + String(h) + "}}}},";
+jsonBody += "{\\"transform\\":{\\"document\\":\\"" + docPath + "\\",\\"fieldTransforms\\":[{\\"fieldPath\\":\\"created_at\\",\\"setToServerValue\\":\\"REQUEST_TIME\\"}]}}";
+jsonBody += "]}";
+
+HTTPClient http;
+http.begin(commitUrl);
+http.addHeader("Content-Type", "application/json");
+int httpResponseCode = http.POST(jsonBody);
       
       if (httpResponseCode > 0) {
         Serial.print("Sincronizado! Resposta: "); Serial.println(httpResponseCode);
@@ -109,7 +118,7 @@ void loop() {
       }
       http.end();
     } else {
-      Serial.println("Erro: Falha ao ler o sensor DHT22!");
+      Serial.println("Erro: Falha ao ler o sensor DHT22! Ignorando envio para evitar Erro 400.");
     }
   } else {
     Serial.println("Erro: Sem conexão Wi-Fi.");

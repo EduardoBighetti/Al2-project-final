@@ -153,10 +153,13 @@ export const Monitoring: React.FC = () => {
 
     setLoading(true);
     // Subscribe to readings for the selected sensor
+    const sensor = sensors.find(s => s.id === Number(selectedSensorId));
     const unsubscribeReadings = readingService.subscribeLatest((data) => {
-      setReadings(data);
+      // Filter out readings from other sensors
+      const filtered = data.filter(r => r.sensor_id === Number(selectedSensorId) || (sensor && r.sensor_identifier === sensor.identifier));
+      setReadings(filtered);
       setLoading(false);
-    }, Number(selectedSensorId));
+    });
 
     return () => unsubscribeReadings();
   }, [selectedSensorId]);
@@ -173,8 +176,10 @@ export const Monitoring: React.FC = () => {
         .getHistorical(start.toISOString(), end.toISOString())
         .then((data) => {
           // Filter by selected sensor
+          const sensor = sensors.find(s => s.id === Number(selectedSensorId));
+          const identifier = sensor ? sensor.identifier : null;
           setHistoricalData(
-            data.filter((r) => r.sensor_id === Number(selectedSensorId)),
+            data.filter((r) => r.sensor_id === Number(selectedSensorId) || (identifier && r.sensor_identifier === identifier)),
           );
         })
         .catch((err) => console.error("Falha ao buscar histórico", err))

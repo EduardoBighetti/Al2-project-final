@@ -2,17 +2,13 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, query, where, getDocs, Timestamp, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
 import fs from 'fs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 // Read firebase config
-const firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf-8'));
+const firebaseConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf-8'));
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -87,7 +83,7 @@ async function startServer() {
       await updateDoc(sensorDoc.ref, updatePayload);
       
       // Também adicionar na coleção global para facilitar queries do dashboard
-      await addDoc(collection(db, 'readings'), {
+      await addDoc(collection(db, 'sensor_readings'), {
         ...newReading,
         sensor_identifier: identifier
       });
@@ -95,7 +91,6 @@ async function startServer() {
       // 3. Verificar limite de temperatura e registrar no console
       if (sensorData.temp_limit && Number(temperature) > sensorData.temp_limit) {
         console.log(`[Alert] Temperatura crítica no sensor ${identifier}: ${temperature}°C (Limite: ${sensorData.temp_limit}°C)`);
-        // Nota: Alertas agora são disparados via Notificações de Navegador (Browser Push) no Dashboard
       }
 
       console.log(`[IoT] Dados recebidos do sensor ${identifier}: ${temperature}°C, ${humidity}%`);
@@ -118,7 +113,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*all', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

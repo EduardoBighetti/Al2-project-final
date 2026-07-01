@@ -38,6 +38,7 @@ export const Devices: React.FC = () => {
   const { t, formatTemp, formatMagnitude, convertMagnitudeValue, revertMagnitudeValue, getMagnitudeUnit } = useLanguage();
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [sensorToDelete, setSensorToDelete] = useState<Sensor | null>(null);
   const [newSensor, setNewSensor] = useState<NewSensorState>({
     identifier: "",
     name: "",
@@ -62,6 +63,8 @@ export const Devices: React.FC = () => {
   // State for inline editing
   const [editingId, setEditingId] = useState<string | null>(null);
   const [targetLimit, setTargetLimit] = useState<string>("");
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const [targetName, setTargetName] = useState<string>("");
 
   useEffect(() => {
     const init = async () => {
@@ -146,20 +149,46 @@ export const Devices: React.FC = () => {
     }
   };
 
-  const handleDelete = async (sensor: Sensor) => {
+  const confirmDelete = async () => {
+    if (!sensorToDelete) return;
     try {
-      if (confirm(`Deseja realmente remover o dispositivo ${sensor.name}?`)) {
-        await sensorService.delete(sensor.id);
-        if (currentUser) {
-          await systemLogService.addLog(
-            currentUser.full_name || currentUser.username,
-            `Removeu o dispositivo ${sensor.name} (${sensor.identifier})`,
-            "danger",
-          );
-        }
+      await sensorService.delete(sensorToDelete.id);
+      if (currentUser) {
+        await systemLogService.addLog(
+          currentUser.full_name || currentUser.username,
+          `Removeu o dispositivo ${sensorToDelete.name} (${sensorToDelete.identifier})`,
+          "danger",
+        );
       }
     } catch (err) {
       console.error("Erro ao deletar", err);
+    } finally {
+      setSensorToDelete(null);
+    }
+  };
+
+  const handleDeleteClick = (sensor: Sensor) => {
+    setSensorToDelete(sensor);
+  };
+
+  const handleSaveName = async (sensor: Sensor) => {
+    if (!targetName.trim()) {
+      setEditingNameId(null);
+      return;
+    }
+    
+    try {
+      await sensorService.update(sensor.identifier, { name: targetName.trim() });
+      if (currentUser) {
+        await systemLogService.addLog(
+          currentUser.full_name || currentUser.username,
+          `Alterou o nome do dispositivo ${sensor.identifier} de "${sensor.name}" para "${targetName.trim()}"`,
+          "edit"
+        );
+      }
+      setEditingNameId(null);
+    } catch (err) {
+      console.error("Erro ao atualizar nome", err);
     }
   };
 
@@ -372,9 +401,46 @@ export const Devices: React.FC = () => {
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              <div className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                                {sensor.name}
-                              </div>
+                              {editingNameId === sensor.identifier ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={targetName}
+                                    onChange={(e) => setTargetName(e.target.value)}
+                                    className="w-full px-2 py-1 text-sm rounded bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-blue-500"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSaveName(sensor);
+                                      if (e.key === 'Escape') setEditingNameId(null);
+                                    }}
+                                  />
+                                  <button onClick={() => handleSaveName(sensor)} className="p-1 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded">
+                                    <Check size={14} />
+                                  </button>
+                                  <button onClick={() => setEditingNameId(null)} className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded">
+                                    <CloseIcon size={14} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div
+                                  onClick={() => {
+                                    if (canManage) {
+                                      setEditingNameId(sensor.identifier);
+                                      setTargetName(sensor.name);
+                                    }
+                                  }}
+                                  className={`group/name text-sm font-medium text-gray-600 dark:text-gray-300 inline-flex items-center gap-2 ${canManage ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`}
+                                  title={canManage ? "Clique para editar" : ""}
+                                >
+                                  {sensor.name}
+                                  {canManage && (
+                                    <Edit2
+                                      size={12}
+                                      className="opacity-0 group-hover/name:opacity-100 transition-opacity"
+                                    />
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td className="px-6 py-4 text-center">
                               <div
@@ -417,7 +483,7 @@ export const Devices: React.FC = () => {
                             <td className="px-6 py-4 text-right">
                               {canManage ? (
                                 <button
-                                  onClick={() => handleDelete(sensor)}
+                                  onClick={() => handleDeleteClick(sensor)}
                                   className="text-gray-400 hover:text-red-600 transition-all p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl"
                                   title="Remover Dispositivo"
                                 >
@@ -808,6 +874,62 @@ export const Devices: React.FC = () => {
                     className="flex-1 px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-500/30 flex items-center justify-center gap-2"
                   >
                     <Check size={16} /> Salvar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {sensorToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setSensorToDelete(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-slate-700 overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-orange-500" />
+              <div className="flex flex-col gap-6 text-center">
+                <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 flex items-center justify-center mx-auto mb-2">
+                  <Trash2 size={32} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
+                    Remover Dispositivo
+                  </h3>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    Você tem certeza que deseja remover o dispositivo{" "}
+                    <strong className="text-gray-800 dark:text-gray-200">
+                      {sensorToDelete.name}
+                    </strong>
+                    ? Esta ação não pode ser desfeita.
+                  </p>
+                </div>
+                <div className="flex gap-4 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setSensorToDelete(null)}
+                    className="flex-1 px-6 py-3 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded-xl font-bold transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDelete}
+                    className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-500/30 transition-all hover:-translate-y-0.5"
+                  >
+                    Remover
                   </button>
                 </div>
               </div>

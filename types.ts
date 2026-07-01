@@ -41,6 +41,7 @@ export interface Sensor {
 export interface Reading {
   id: number;
   sensor_id: number;
+  sensor_identifier?: string;
   temperature?: number;
   humidity?: number;
   values?: Record<string, number>;

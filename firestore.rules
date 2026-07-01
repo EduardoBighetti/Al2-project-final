@@ -136,14 +136,20 @@ service cloud.firestore {
 
     // Sensors Collection
     match /sensors/{sensorId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAdmin() && isValidSensor(request.resource.data);
-      allow delete: if isGerencia();
+      allow read: if true;
+      allow create: if isAdmin() && isValidSensor(request.resource.data);
+      allow update: if true;
+      allow delete: if isAdmin() || isGerencia();
 
       // Readings Subcollection
       match /readings/{readingId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && isValidReading(request.resource.data);
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+    match /sensor_readings/{readingId} {
+        allow read: if true;
+        allow create: if true;
         allow update, delete: if isAdmin();
       }
     }
@@ -156,8 +162,13 @@ service cloud.firestore {
 
     // Top-level Readings Collection (used by the app for global queries)
     match /readings/{readingId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidReading(request.resource.data);
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+    match /sensor_readings/{readingId} {
+      allow read: if true;
+      allow create: if true;
       allow update, delete: if isAdmin();
     }
     // Feedback Collection

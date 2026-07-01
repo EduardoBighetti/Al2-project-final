@@ -144,8 +144,9 @@ export const Dashboard: React.FC = () => {
   // --- CÁLCULO DAS MÉTRICAS FILTRADAS ---
   const aggregatedData = useMemo(() => {
     const dataSource = useHistorical ? historicalData : readings;
+    const selectedIdentifiers = sensors.filter(s => selectedIds.includes(s.id)).map(s => s.identifier);
     const filtered = dataSource.filter((r) =>
-      selectedIds.includes(r.sensor_id),
+      selectedIds.includes(r.sensor_id) || (r.sensor_identifier && selectedIdentifiers.includes(r.sensor_identifier))
     );
 
     if (filtered.length === 0)
