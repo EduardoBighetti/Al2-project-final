@@ -90,13 +90,20 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const isLengthValid = newPassword.length >= 6;
+  const hasUpperCase = /[A-Z]/.test(newPassword);
+  const hasLowerCase = /[a-z]/.test(newPassword);
+  const hasNumber = /[0-9]/.test(newPassword);
+  const hasSpecialChar = /[^A-Za-z0-9]/.test(newPassword);
+  const isPasswordValid = isLengthValid && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar;
+
   const handleResetConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
     
-    if (newPassword.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.');
+    if (!isPasswordValid) {
+      setError('A senha não atende aos requisitos mínimos.');
       return;
     }
     
@@ -315,6 +322,31 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                   {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+
+              {newPassword && (
+                <div className="mt-3 space-y-2 text-xs">
+                  <div className={`flex items-center gap-2 transition-colors ${isLengthValid ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    <CheckCircle2 size={14} className={`transition-opacity ${isLengthValid ? 'opacity-100' : 'opacity-30'}`} />
+                    <span>Mínimo 6 caracteres</span>
+                  </div>
+                  <div className={`flex items-center gap-2 transition-colors ${hasUpperCase ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    <CheckCircle2 size={14} className={`transition-opacity ${hasUpperCase ? 'opacity-100' : 'opacity-30'}`} />
+                    <span>Uma letra maiúscula</span>
+                  </div>
+                  <div className={`flex items-center gap-2 transition-colors ${hasLowerCase ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    <CheckCircle2 size={14} className={`transition-opacity ${hasLowerCase ? 'opacity-100' : 'opacity-30'}`} />
+                    <span>Uma letra minúscula</span>
+                  </div>
+                  <div className={`flex items-center gap-2 transition-colors ${hasNumber ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    <CheckCircle2 size={14} className={`transition-opacity ${hasNumber ? 'opacity-100' : 'opacity-30'}`} />
+                    <span>Um número</span>
+                  </div>
+                  <div className={`flex items-center gap-2 transition-colors ${hasSpecialChar ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    <CheckCircle2 size={14} className={`transition-opacity ${hasSpecialChar ? 'opacity-100' : 'opacity-30'}`} />
+                    <span>Um caractere especial (@$!%*?&)</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
